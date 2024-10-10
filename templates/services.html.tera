@@ -1,0 +1,16 @@
+{% for service in services %}
+<div class="col-md-6">
+    <h2>{{ service.name }}</h2>
+    <ul class="list-group">
+        {% for task in service.tasks %}
+        <li class="list-group-item">
+            {{ task.name }}
+            <div class="progress">
+                <div class="progress-bar" role="progressbar" style="width:{{ task.progress }}%;" aria-valuenow="{{ task.progress }}" aria-valuemin="0" aria-valuemax="100">{{ task.progress }}%</div>
+            </div>
+            <button id="increment-button" onclick="update_task_progress( '{{service.id}}','{{task.id}}' )">+</button>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endfor %}

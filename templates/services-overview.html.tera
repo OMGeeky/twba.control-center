@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Services and Tasks</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+<div class="container">
+    <h1>Services and Tasks</h1>
+    <div class="row" id="services-container">
+
+    </div>
+    <div id="last-update-element" data-timestamp="0">hi</div>
+    <button id="update-button">Update Progress</button>
+</div>
+
+<script>
+    function update_task_progress(service_id, task_id) {
+        console.log('updating task: ' + service_id + ' ' + task_id);
+        // $.post('/update_progress', {
+        $.ajax({
+            type: "POST",
+            url: "/services/" + service_id + "/increment-progress/" + task_id,
+            success: function (data) {
+                console.log('success updating', data);
+                updateProgress();
+            },
+            error: function (error) {
+                console.error("Error updating progress:", error);
+                // Handle the error appropriately (e.g., display an error message)
+            }
+        });
+    }
+
+    function updateProgress() {
+        $.get("/services/update_progress", function (data) {
+            $("#services-container").html(data);
+            updateLastUpdateTime();
+        });
+    }
+
+    function updateLastUpdateTime() {
+        let lastUpdateElement = $("#last-update-element");
+        lastUpdateElement.text("Last updated " + new Date().toLocaleString('de-DE'));
+        console.log('updating progress: ' + lastUpdateElement.text());
+    }
+
+    let updateInterval;
+
+    function startUpdateInterval(interval) {
+        clearInterval(updateInterval); // Clear any existing interval
+        updateInterval = setInterval(updateProgress, interval);
+    }
+
+    $(document).ready(function () {
+        const normalUpdateInterval = 5000;
+        const slowUpdateInterval = 30000;
+
+
+        $("#update-button").click(updateProgress);
+        updateProgress();
+
+
+        // Initial update and fast interval
+        updateProgress();
+        startUpdateInterval(normalUpdateInterval);
+
+        // Detect visibility changes
+        document.addEventListener("visibilitychange", function () {
+            if (document.visibilityState === "visible") {
+                // Fast updates when tab is visible
+                startUpdateInterval(normalUpdateInterval);
+            } else {
+                // Slow updates when tab is hidden
+                startUpdateInterval(slowUpdateInterval);
+            }
+        });
+    });
+</script>
+</body>
+</html>

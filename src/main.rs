@@ -1,9 +1,11 @@
+use crate::services::init_services;
 use derive_more::{FromStr, FromStrError};
 #[macro_use]
 extern crate rocket;
 
 use rocket::request::FromParam;
 use rocket::tokio::time::{sleep, Duration};
+use rocket_dyn_templates::Template;
 use std::sync::OnceLock;
 use twba_common::init_tracing;
 use twba_common::prelude::twba_local_db;
@@ -14,10 +16,7 @@ use twba_common::prelude::Conf;
 static CLIENT: OnceLock<DatabaseConnection> = OnceLock::new();
 static CONF: OnceLock<Conf> = OnceLock::new();
 
-#[get("/service/<service>/info")]
-fn service_info(service: AvailableServices) -> String {
-    format!("Here is some info about the service: name: {service}")
-}
+mod services;
 
 #[get("/delay/<seconds>")]
 async fn delay(seconds: u64) -> String {
@@ -50,8 +49,20 @@ async fn get_new_client<'a>() -> Result<DatabaseConnection, MainError> {
 async fn main() -> Result<(), MainError> {
     let _guard = init_tracing("twba_uploader");
     info!("Hello world!");
+    let services = init_services();
     let _rocket = rocket::build()
-        .mount("/", routes![index, delay, service_info])
+        .manage(services)
+        .mount("/", routes![index, delay,])
+        .mount(
+            "/services/",
+            routes![
+                services::service,
+                services::service_info,
+                services::update_progress,
+                services::increment_progress,
+            ],
+        )
+        .attach(Template::fairing())
         .launch()
         .await?;
 

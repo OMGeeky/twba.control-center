@@ -5,7 +5,10 @@ edition = "2021"
 
 [dependencies]
 rocket = "0.5.1"
+rocket_dyn_templates = { version = "0.2.0", features = ["tera"] }
+
 twba-common.workspace = true
 lazy_static = "1.5.0"
 derive_more = { version = "1.0.0", features = ["full"] }
+serde = { version = "1.0.203", features = ["derive"] }
 
