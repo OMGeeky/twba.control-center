@@ -1,9 +1,10 @@
-use crate::services::init_services;
 use derive_more::{FromStr, FromStrError};
+use rocket::State;
 #[macro_use]
 extern crate rocket;
 
 use rocket::request::FromParam;
+use rocket::response::Responder;
 use rocket::tokio::time::{sleep, Duration};
 use rocket_dyn_templates::Template;
 use std::sync::OnceLock;
@@ -13,7 +14,6 @@ use twba_common::prelude::twba_local_db::re_exports::sea_orm;
 use twba_common::prelude::twba_local_db::re_exports::sea_orm::DatabaseConnection;
 use twba_common::prelude::Conf;
 
-static CLIENT: OnceLock<DatabaseConnection> = OnceLock::new();
 static CONF: OnceLock<Conf> = OnceLock::new();
 
 mod services;
@@ -28,20 +28,15 @@ fn index() -> &'static str {
     trace!("Called Index");
     "Hello, world!"
 }
+#[post("/migrate")]
+async fn migrate(db: &State<DatabaseConnection>) -> Result<(), ResponderError> {
+    twba_local_db::migrate_db(db.inner()).await?;
+    Ok(())
+}
 fn get_config<'a>() -> &'a Conf {
     CONF.get_or_init(twba_common::get_config)
 }
-async fn get_client<'a>() -> Result<&'a DatabaseConnection, MainError> {
-    match CLIENT.get() {
-        Some(client) => Ok(client),
-        None => {
-            CLIENT
-                .set(get_new_client().await?)
-                .expect("Failed to set client after failing to get client");
-            Ok(CLIENT.get().expect("we just initialized the client"))
-        }
-    }
-}
+
 async fn get_new_client<'a>() -> Result<DatabaseConnection, MainError> {
     Ok(twba_local_db::open_database(Some(&get_config().db_url)).await?)
 }
@@ -49,10 +44,10 @@ async fn get_new_client<'a>() -> Result<DatabaseConnection, MainError> {
 async fn main() -> Result<(), MainError> {
     let _guard = init_tracing("twba_uploader");
     info!("Hello world!");
-    let services = init_services();
+    let db = get_new_client().await?;
     let _rocket = rocket::build()
-        .manage(services)
-        .mount("/", routes![index, delay,])
+        .manage(db)
+        .mount("/", routes![index, delay, migrate])
         .mount(
             "/services/",
             routes![
@@ -60,6 +55,8 @@ async fn main() -> Result<(), MainError> {
                 services::service_info,
                 services::update_progress,
                 services::increment_progress,
+                services::increment_task_progress,
+                services::add,
             ],
         )
         .attach(Template::fairing())
@@ -67,6 +64,38 @@ async fn main() -> Result<(), MainError> {
         .await?;
 
     Ok(())
+}
+#[derive(Debug, derive_more::Error, derive_more::Display, Responder)]
+#[display("{e}")]
+pub struct DbErr {
+    _dummy: String,
+    #[response(ignore)]
+    e: sea_orm::DbErr,
+}
+impl From<sea_orm::DbErr> for DbErr {
+    fn from(e: twba_common::prelude::twba_local_db::re_exports::sea_orm::DbErr) -> Self {
+        let _dummy = "Some DB Error".to_string();
+        Self { _dummy, e }
+    }
+}
+impl From<sea_orm::DbErr> for ResponderError {
+    fn from(e: twba_common::prelude::twba_local_db::re_exports::sea_orm::DbErr) -> Self {
+        let e: DbErr = e.into();
+        e.into()
+    }
+}
+#[derive(Debug, derive_more::Error, derive_more::Display, derive_more::From, Responder)]
+pub enum ResponderError {
+    #[response(status = 404)]
+    Db(#[from] DbErr),
+    #[display("Could not find entity '{table}' with key:'{key}'")]
+    #[response(status = 404)]
+    #[from(ignore)]
+    DbEntityNotFound {
+        table: &'static str,
+        #[response(ignore)]
+        key: String,
+    },
 }
 #[derive(Debug, derive_more::Error, derive_more::Display, derive_more::From)]
 pub enum MainError {
@@ -86,7 +115,6 @@ pub enum MainError {
 }
 #[derive(Debug, derive_more::Display, derive_more::From, Clone, Copy)]
 pub enum Statics {
-    DbClient,
     Config,
 }
 

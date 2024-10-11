@@ -1,103 +1,127 @@
-use crate::AvailableServices;
-use rocket::fs::{relative, FileServer};
+use crate::DatabaseConnection;
+use crate::{AvailableServices, ResponderError};
 use rocket::State;
 use rocket_dyn_templates::{context, Template};
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
+use twba_common::prelude::twba_local_db::prelude::{Services, Tasks};
+use twba_common::prelude::twba_local_db::re_exports::sea_orm::ActiveModelTrait;
+use twba_common::prelude::twba_local_db::re_exports::sea_orm::ActiveValue;
+use twba_common::prelude::twba_local_db::re_exports::sea_orm::{EntityTrait, IntoActiveModel};
 
+async fn get_services(db: &DatabaseConnection) -> Result<Vec<Service>, ResponderError> {
+    let mut list = vec![];
+
+    let services = Services::find().all(db).await?;
+    let tasks = Tasks::find().all(db).await?;
+    for service in services {
+        let service_tasks = tasks
+            .iter()
+            .filter(|x| x.service_id == service.id)
+            .map(|x| Task {
+                description: x.description.clone().unwrap_or_default(),
+                id: x.id,
+                max_progress: x.max_progress,
+                progress: x.progress,
+                service_id: x.service_id,
+            })
+            .collect();
+        list.push(Service {
+            id: service.id,
+            name: service.name,
+            tasks: service_tasks,
+            last_update: service.last_update.unwrap_or_default(),
+        });
+    }
+    Ok(list)
+}
 #[derive(serde::Serialize)]
 pub struct Service {
+    id: i32,
     name: String,
-    id: String,
     tasks: Vec<Task>,
+    last_update: String,
 }
 
 #[derive(serde::Serialize)]
 pub struct Task {
-    name: String,
-    id: String,
-    progress: Arc<AtomicUsize>, // Progress in percentage
+    id: i32,
+    service_id: i32,
+    description: String,
+    progress: i32,
+    max_progress: i32,
 }
 
 #[get("/<service>/info")]
 pub(super) fn service_info(service: AvailableServices) -> String {
     format!("Here is some info about the service: name: {service}")
 }
-pub(super) fn init_services() -> Vec<Service> {
-    let task1_progress = Arc::new(AtomicUsize::new(60));
-    let task2_progress = Arc::new(AtomicUsize::new(100));
-    let task3_progress = Arc::new(AtomicUsize::new(20));
-    let task4_progress = Arc::new(AtomicUsize::new(80));
-
-    vec![
-        Service {
-            name: "Service A".to_string(),
-            id: "s1".to_string(),
-            tasks: vec![
-                Task {
-                    name: "Task 1".to_string(),
-                    id: "t1".to_string(),
-                    progress: task1_progress,
-                },
-                Task {
-                    name: "Task 2".to_string(),
-                    id: "t2".to_string(),
-                    progress: task2_progress,
-                },
-            ],
-        },
-        Service {
-            name: "Service B".to_string(),
-            id: "s2".to_string(),
-            tasks: vec![
-                Task {
-                    name: "Task 3".to_string(),
-                    id: "t3".to_string(),
-                    progress: task3_progress,
-                },
-                Task {
-                    name: "Task 4".to_string(),
-                    id: "t4".to_string(),
-                    progress: task4_progress,
-                },
-            ],
-        },
-    ]
-}
 #[get("/")]
-pub(super) fn service(services: &State<Vec<Service>>) -> Template {
-    let x = services.inner();
-    let last_update = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    Template::render(
+pub(super) async fn service(db: &State<DatabaseConnection>) -> Result<Template, ResponderError> {
+    let services = get_services(db.inner()).await?;
+
+    Ok(Template::render(
         "services-overview",
-        context! { services: x , last_update: last_update },
-    )
+        context! {services:services},
+    ))
 }
 
+#[post("/add")]
+pub async fn add(db: &State<DatabaseConnection>) -> Result<(), ResponderError> {
+    let s = twba_common::prelude::twba_local_db::entities::services::ActiveModel {
+        id: ActiveValue::NotSet,
+        name: ActiveValue::Set("Test1".to_string()),
+        last_update: ActiveValue::NotSet,
+    };
+    Services::insert(s).exec(db.inner()).await?;
+    Ok(())
+}
+#[post("/increment-progress/<task>")]
+pub async fn increment_task_progress(
+    task: i32,
+    db: &State<DatabaseConnection>,
+) -> Result<(), ResponderError> {
+    let db = db.inner();
+    let task = Tasks::find_by_id(task)
+        .one(db)
+        .await?
+        .ok_or(ResponderError::DbEntityNotFound {
+            table: "Tasks",
+            key: format!("{task}"),
+        })?;
+    let progress = task.progress;
+    let mut task = task.into_active_model();
+    task.progress = ActiveValue::Set(progress + 1);
+    task.save(db).await?;
+    Ok(())
+}
 #[post("/<service>/increment-progress/<task>")]
-pub fn increment_progress(
-    service: String,
-    task: String,
-    services: &State<Vec<Service>>,
-) -> Result<(), String> {
-    if let Some(service) = services.inner().iter().find(|x| x.id == service) {
-        if let Some(task) = service.tasks.iter().find(|x| x.id == task) {
-            task.progress.fetch_add(1, Ordering::AcqRel);
-            Ok(())
-        } else {
-            Err("task with index not found".to_string())
-        }
-    } else {
-        Err("service with index not found".to_string())
-    }
+pub async fn increment_progress(
+    service: i32,
+    task: i32,
+    db_state: &State<DatabaseConnection>,
+) -> Result<(), ResponderError> {
+    let db = db_state.inner();
+
+    let service =
+        Services::find_by_id(service)
+            .one(db)
+            .await?
+            .ok_or(ResponderError::DbEntityNotFound {
+                table: "Services",
+                key: format!("{service}"),
+            })?;
+
+    let datetime = chrono::offset::Utc::now().to_rfc3339();
+
+    let mut service = service.into_active_model();
+
+    service.last_update = ActiveValue::Set(Some(datetime));
+    increment_task_progress(task, db_state).await?;
+
+    service.save(db).await?;
+    Ok(())
 }
 #[get("/update_progress")]
-pub fn update_progress(services: &State<Vec<Service>>) -> Template {
-    Template::render("services", context! { services: services.inner() })
+pub async fn update_progress(db: &State<DatabaseConnection>) -> Result<Template, ResponderError> {
+    let services = get_services(db.inner()).await?;
+    Ok(Template::render("services", context! {services:services}))
 }

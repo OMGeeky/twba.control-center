@@ -9,14 +9,32 @@
 <body>
 <div class="container">
     <h1>Services and Tasks</h1>
+    <h2>thsi is a long text to check if the size of this has any influence on the size of the rest</h2>
     <div class="row" id="services-container">
 
     </div>
-    <div id="last-update-element" data-timestamp="0">hi</div>
-    <button id="update-button">Update Progress</button>
+    <button class="btn btn-primary" id="add-service">Add Service</button>
+    <div style="flex-direction: row; display: flex" class="container">
+        <button class="btn btn-primary" id="update-button">Update Progress</button>
+        <div id="last-update-element" data-timestamp="0">hi</div>
+    </div>
 </div>
 
 <script>
+    function add_service() {
+        $.ajax({
+            type: "POST",
+            url: "/services/add/",
+            success: function (data) {
+                console.log('success');
+                updateProgress();
+            },
+            error: function (error) {
+                console.error("Error updating progress:", error);
+            }
+        });
+    }
+
     function update_task_progress(service_id, task_id) {
         console.log('updating task: ' + service_id + ' ' + task_id);
         // $.post('/update_progress', {
@@ -60,6 +78,7 @@
 
 
         $("#update-button").click(updateProgress);
+        $("#add-service").click(add_service);
         updateProgress();
 
 

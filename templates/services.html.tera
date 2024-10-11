@@ -6,7 +6,7 @@
         <li class="list-group-item">
             {{ task.name }}
             <div class="progress">
-                <div class="progress-bar" role="progressbar" style="width:{{ task.progress }}%;" aria-valuenow="{{ task.progress }}" aria-valuemin="0" aria-valuemax="100">{{ task.progress }}%</div>
+                <div class="progress-bar" role="progressbar" style="width:{{ task.max_progress / task.progress * 100 }}%;" aria-valuenow="{{ task.progress }}" aria-valuemin="0" aria-valuemax="{{ task.max_progress }}">{{ task.progress }}%</div>
             </div>
             <button id="increment-button" onclick="update_task_progress( '{{service.id}}','{{task.id}}' )">+</button>
         </li>
