@@ -5,6 +5,7 @@
     <title>Services and Tasks</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 </head>
 <body>
 <div class="container">
@@ -13,14 +14,62 @@
     <div class="row" id="services-container">
 
     </div>
+
+    <div class="modal" id="editIdStringModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+
+                <div class="modal-body">
+                    <form id="editForm" method="post" action="/services/edit-service/test">
+                        <input type="hidden" id="idField" name="id">
+                        <div class="form-group">
+                            <label for="valueField">Name:</label>
+                            <input type="text" class="form-control" id="valueField" name="value" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save changes</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <button class="btn btn-primary" id="add-service">Add Service</button>
     <div style="flex-direction: row; display: flex" class="container">
         <button class="btn btn-primary" id="update-button">Update Progress</button>
         <div id="last-update-element" data-timestamp="0">hi</div>
+        <input type="checkbox" id="auto-update-toggle" checked>
+        <label for="auto-update-toggle">Enable Auto Update</label>
     </div>
 </div>
 
 <script>
+
+    function openEditServiceModal(serviceId, serviceName) {
+        setAutoUpdateActive(false);
+        $('#idField').val(serviceId);
+        $('#valueField').val(serviceName);
+        $('#valueField').name = "Name";
+        $('#editForm').attr("action", "/services/edit-service/");
+        $('#editIdStringModal').modal('show');
+        console.log('Edit Service ID: ' + serviceId);
+    }
+
+    function openEditTaskModal(taskId, taskName) {
+        setAutoUpdateActive(false);
+        $('#idField').val(taskId);
+        $('#valueField').val(taskName);
+        $('#valueField').name = "Description";
+        $('#editForm').attr("action", "/services/edit-task/");
+        $('#editIdStringModal').modal('show');
+        console.log('Edit Task ID: ' + taskId);
+    }
+
     function add_service() {
         $.ajax({
             type: "POST",
@@ -65,35 +114,91 @@
         console.log('updating progress: ' + lastUpdateElement.text());
     }
 
+
+    // Auto-update functionality
+    const normalUpdateInterval = 5000;
+    const slowUpdateInterval = 30000;
+    let autoUpdateCheckboxValue = true;
+    let autoUpdateActiveOverride = autoUpdateCheckboxValue;
     let updateInterval;
 
     function startUpdateInterval(interval) {
-        clearInterval(updateInterval); // Clear any existing interval
+        clearInterval(updateInterval);
         updateInterval = setInterval(updateProgress, interval);
     }
 
+    function stopUpdateInterval() {
+        clearInterval(updateInterval);
+    }
+
+    function setAutoUpdateActive(value) {
+        autoUpdateActiveOverride = value;
+        console.log("autoUpdateActive: " + autoUpdateActiveOverride);
+
+        if (autoUpdateActiveOverride) {
+            // Checkbox is checked, start auto-update
+            startUpdateInterval(normalUpdateInterval);
+        } else {
+            // Checkbox is unchecked, stop auto-update
+            stopUpdateInterval();
+        }
+    }
+
+    function reloadAutoUpdateActiveFromCheckbox() {
+        setAutoUpdateActive(autoUpdateCheckboxValue);
+    }
+
     $(document).ready(function () {
-        const normalUpdateInterval = 5000;
-        const slowUpdateInterval = 30000;
 
 
         $("#update-button").click(updateProgress);
         $("#add-service").click(add_service);
-        updateProgress();
 
 
         // Initial update and fast interval
         updateProgress();
         startUpdateInterval(normalUpdateInterval);
 
-        // Detect visibility changes
+        $('#editForm').submit(function (event) {
+            event.preventDefault();
+
+            var form = $(this);
+            var url = form.attr('action');
+            var type = form.attr('method');
+
+            $.ajax({
+                type: type,
+                url: url,
+                data: form.serialize(),
+                success: function (data) {
+                    $('#editIdStringModal').modal('hide');
+                    updateProgress();
+                },
+                error: function (error) {
+                    console.error("Error editing:", error);
+                }
+            });
+        })
+
+
+        // Toggle auto-update
+        $("#auto-update-toggle").change(function () {
+            autoUpdateCheckboxValue = this.checked;
+            reloadAutoUpdateActiveFromCheckbox();
+        });
+        autoUpdateCheckboxValue = $("#auto-update-toggle").is(":checked");
+        $('#editIdStringModal').on('hidden.bs.modal', function () {
+            reloadAutoUpdateActiveFromCheckbox();
+        });
+
+        // Detect visibility changes (adjust interval when tab is hidden)
         document.addEventListener("visibilitychange", function () {
-            if (document.visibilityState === "visible") {
-                // Fast updates when tab is visible
-                startUpdateInterval(normalUpdateInterval);
-            } else {
-                // Slow updates when tab is hidden
-                startUpdateInterval(slowUpdateInterval);
+            if (autoUpdateActiveOverride) {
+                if (document.visibilityState === "visible") {
+                    startUpdateInterval(normalUpdateInterval);
+                } else {
+                    startUpdateInterval(slowUpdateInterval);
+                }
             }
         });
     });

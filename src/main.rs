@@ -1,11 +1,11 @@
-use derive_more::{FromStr, FromStrError};
-use rocket::State;
 #[macro_use]
 extern crate rocket;
-
+use derive_more::FromStr;
+use derive_more::FromStrError;
 use rocket::request::FromParam;
 use rocket::response::Responder;
 use rocket::tokio::time::{sleep, Duration};
+use rocket::State;
 use rocket_dyn_templates::Template;
 use std::sync::OnceLock;
 use twba_common::init_tracing;
@@ -51,8 +51,9 @@ async fn main() -> Result<(), MainError> {
         .mount(
             "/services/",
             routes![
-                services::service,
-                services::service_info,
+                services::service_index,
+                services::task_edit,
+                services::service_edit,
                 services::update_progress,
                 services::increment_progress,
                 services::increment_task_progress,

@@ -1,12 +1,15 @@
 {% for service in services %}
 <div class="col-md-6">
-    <h2>{{ service.name }}</h2>
+    <h2>{{ service.name }}
+        <button class="btn btn-sm btn-primary" onclick="openEditServiceModal('{{ service.id }}', '{{ service.name }}')">Edit</button>
+    </h2>
     <ul class="list-group">
         {% for task in service.tasks %}
         <li class="list-group-item">
-            {{ task.name }}
+            {{ task.description }}
+            <button class="btn btn-sm btn-primary" onclick="openEditTaskModal('{{ task.id }}', '{{ task.description }}')">Edit</button>
             <div class="progress">
-                <div class="progress-bar" role="progressbar" style="width:{{ task.max_progress / task.progress * 100 }}%;" aria-valuenow="{{ task.progress }}" aria-valuemin="0" aria-valuemax="{{ task.max_progress }}">{{ task.progress }}%</div>
+                <div class="progress-bar" role="progressbar" style="width:{{ task.progress/task.max_progress *100  }}%;" aria-valuenow="{{ task.progress }}" aria-valuemin="0" aria-valuemax="{{ task.max_progress }}">{{ task.progress }}%</div>
             </div>
             <button id="increment-button" onclick="update_task_progress( '{{service.id}}','{{task.id}}' )">+</button>
         </li>
@@ -14,3 +17,4 @@
     </ul>
 </div>
 {% endfor %}
+
